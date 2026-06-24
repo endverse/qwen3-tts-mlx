@@ -1,6 +1,7 @@
 """Shared TTS generation logic for Qwen3-TTS."""
 
 import threading
+from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
 
@@ -194,6 +195,76 @@ def generate_preset_audio(
     audio = np.array(results[0].audio)
     metadata = save_generation(audio, voice_name, temp, instruct.strip())
     return audio, metadata
+
+
+def generate_preset_audio_stream(
+    text: str,
+    voice: str,
+    instruct: str,
+    temperature: float,
+    model_name: str = "1.7B-CustomVoice",
+    streaming_interval: float = 2.0,
+) -> Generator[np.ndarray, None, None]:
+    """Stream audio chunks using a preset voice.
+
+    Yields numpy audio arrays (float32, 24kHz) as they are generated.
+    """
+    if not text.strip():
+        raise ValueError("Please enter text to synthesize")
+
+    model_path = PRESET_MODELS.get(model_name)
+    if not model_path:
+        raise ValueError(f"Unknown preset model: {model_name}")
+    if not is_model_downloaded(model_path):
+        raise RuntimeError(f"Model not downloaded: '{model_name}'")
+
+    temp = validate_temperature(temperature)
+    model = get_model(model_path)
+    voice_name = voice.split(" (")[0]
+
+    for result in model.generate(
+        text=text,
+        voice=voice_name,
+        instruct=instruct.strip() or None,
+        temperature=temp,
+        stream=True,
+        streaming_interval=streaming_interval,
+    ):
+        yield np.array(result.audio)
+
+
+def generate_design_audio_stream(
+    text: str,
+    instruct: str,
+    language: str = "Auto",
+    temperature: float = 0.9,
+    streaming_interval: float = 2.0,
+) -> Generator[np.ndarray, None, None]:
+    """Stream audio chunks using the VoiceDesign model.
+
+    Yields numpy audio arrays (float32, 24kHz) as they are generated.
+    """
+    if not text.strip():
+        raise ValueError("Please enter text to synthesize")
+    if not instruct.strip():
+        raise ValueError("Please enter a voice description")
+
+    model_path = DESIGN_MODELS["1.7B-VoiceDesign"]
+    if not is_model_downloaded(model_path):
+        raise RuntimeError("Model not downloaded: '1.7B-VoiceDesign'")
+
+    temp = validate_temperature(temperature)
+    model = get_model(model_path)
+
+    for result in model.generate(
+        text=text,
+        instruct=instruct.strip(),
+        lang_code=language.lower(),
+        temperature=temp,
+        stream=True,
+        streaming_interval=streaming_interval,
+    ):
+        yield np.array(result.audio)
 
 
 def generate_design_audio(
