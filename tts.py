@@ -62,6 +62,27 @@ def get_cached_models() -> dict[str, tuple[bool, int]]:
     cached = {}
     for repo in cache_info.repos:
         cached[repo.repo_id] = (True, repo.size_on_disk)
+
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+    for repo_id in ALL_MODELS.values():
+        if repo_id in cached:
+            continue
+        repo_dir_name = "models--" + repo_id.replace("/", "--")
+        repo_dir = cache_dir / repo_dir_name
+        if not repo_dir.is_dir():
+            continue
+        refs_main = repo_dir / "refs" / "main"
+        if not refs_main.exists():
+            continue
+        commit = refs_main.read_text().strip()
+        snap_dir = repo_dir / "snapshots" / commit
+        if not snap_dir.is_dir():
+            continue
+        safetensors = list(snap_dir.glob("*.safetensors")) + list(snap_dir.rglob("**/*.safetensors"))
+        if safetensors:
+            total = sum(f.stat().st_size for f in repo_dir.rglob("*") if f.is_file())
+            cached[repo_id] = (True, total)
+
     return cached
 
 
